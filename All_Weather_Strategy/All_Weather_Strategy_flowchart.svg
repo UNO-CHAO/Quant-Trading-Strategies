@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 780" style="background-color:#ffffff; font-family:'SimSun', 'Microsoft YaHei', Arial, sans-serif;">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000000" />
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4e79" />
+    </marker>
+    <marker id="arrow-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#888888" />
+    </marker>
+  </defs>
+
+  <text x="575" y="40" fill="#000000" font-size="24" font-weight="bold" text-anchor="middle" font-family="'Microsoft YaHei', sans-serif">改进型全天候策略 (Risk Parity + CTA择时 + TRS互换) 系统流程图</text>
+  <line x1="200" y1="60" x2="950" y2="60" stroke="#000000" stroke-width="2"/>
+
+  <rect x="30" y="100" width="320" height="640" fill="#eef6fc" stroke="#000000" stroke-width="1.5" stroke-dasharray="6 4" rx="0"/>
+  <rect x="30" y="100" width="320" height="40" fill="#cedeea" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="190" y="125" fill="#000000" font-size="16" font-weight="bold" text-anchor="middle">模块 A: 数据接入层 (data_fetcher.py)</text>
+
+  <rect x="50" y="160" width="280" height="40" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="190" y="185" fill="#000000" font-size="14" font-weight="bold" text-anchor="middle">Tushare Pro API 数据专线</text>
+
+  <rect x="50" y="230" width="280" height="150" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="50" y="230" width="280" height="30" fill="#fff2cc" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="190" y="250" fill="#000000" font-size="14" font-weight="bold" text-anchor="middle">“全天候”宏观经济象限模型</text>
+  
+  <line x1="190" y1="260" x2="190" y2="380" stroke="#888888" stroke-width="1" stroke-dasharray="2 2"/>
+  <line x1="50" y1="320" x2="330" y2="320" stroke="#888888" stroke-width="1" stroke-dasharray="2 2"/>
+  
+  <text x="120" y="290" fill="#000000" font-size="13" text-anchor="middle">增长超预期</text>
+  <text x="120" y="310" fill="#555555" font-size="11" text-anchor="middle">(Equity, Commodity)</text>
+  
+  <text x="260" y="290" fill="#000000" font-size="13" text-anchor="middle">通胀超预期</text>
+  <text x="260" y="310" fill="#555555" font-size="11" text-anchor="middle">(Commodity, Gold)</text>
+  
+  <text x="120" y="350" fill="#000000" font-size="13" text-anchor="middle">增长低于预期</text>
+  <text x="120" y="370" fill="#555555" font-size="11" text-anchor="middle">(Bonds)</text>
+  
+  <text x="260" y="350" fill="#000000" font-size="13" text-anchor="middle">通胀低于预期</text>
+  <text x="260" y="370" fill="#555555" font-size="11" text-anchor="middle">(Equity, Bonds)</text>
+
+  <rect x="50" y="410" width="280" height="110" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="50" y="410" width="280" height="30" fill="#ddebf7" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="190" y="430" fill="#000000" font-size="14" font-weight="bold" text-anchor="middle">多资产Universe构建</text>
+  <text x="65" y="465" fill="#000000" font-size="13">▶ 权益: 沪深300 / 红利ETF</text>
+  <text x="65" y="485" fill="#000000" font-size="13">▶ 债券: 中债10年期国债</text>
+  <text x="65" y="505" fill="#000000" font-size="13">▶ 通胀: 资源ETF / 黄金ETF</text>
+
+  <rect x="50" y="550" width="280" height="40" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="190" y="575" fill="#000000" font-size="13" text-anchor="middle">日历对齐 (ffill) &amp; 收益率计算</text>
+
+  <rect x="50" y="620" width="280" height="50" fill="#e2efda" stroke="#548235" stroke-width="1.5" rx="0"/>
+  <text x="190" y="650" fill="#385723" font-size="14" font-weight="bold" text-anchor="middle">CSV 数据集文件</text>
+
+
+  <rect x="390" y="100" width="380" height="640" fill="#fff9e6" stroke="#000000" stroke-width="1.5" stroke-dasharray="6 4" rx="0"/>
+  <rect x="390" y="100" width="380" height="40" fill="#ffeeba" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="580" y="125" fill="#000000" font-size="16" font-weight="bold" text-anchor="middle">模块 B: 信号与优化层 (strategy_optimizer.py)</text>
+
+  <rect x="410" y="180" width="160" height="100" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="410" y="180" width="160" height="30" fill="#fff2cc" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="490" y="200" fill="#000000" font-size="13" font-weight="bold" text-anchor="middle">单一资产 CTA 择时</text>
+  <text x="490" y="235" fill="#000000" font-size="12" text-anchor="middle">均线 / 唐奇安 / MACD</text>
+  <text x="490" y="260" fill="#c00000" font-size="12" font-weight="bold" text-anchor="middle">shift(1) 规避未来函数</text>
+
+  <rect x="590" y="180" width="160" height="100" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="590" y="180" width="160" height="30" fill="#fff2cc" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="670" y="200" fill="#000000" font-size="13" font-weight="bold" text-anchor="middle">风险测度评估</text>
+  <text x="670" y="235" fill="#000000" font-size="12" text-anchor="middle">收益率滚动预测</text>
+  <text x="670" y="260" fill="#000000" font-size="12" text-anchor="middle">126D EWMA 协方差矩阵</text>
+
+  <rect x="410" y="340" width="340" height="160" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="410" y="340" width="340" height="30" fill="#ddebf7" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="580" y="360" fill="#000000" font-size="14" font-weight="bold" text-anchor="middle">基于 SLSQP 优化的动态风险平价</text>
+  <text x="430" y="400" fill="#000000" font-size="13">▶ 动态映射：Target RB = 20% × CTA信号</text>
+  <text x="430" y="430" fill="#000000" font-size="13">▶ 目标函数：Minimized组合 RC 误差偏差平方和</text>
+  <text x="430" y="460" fill="#000000" font-size="13">▶ 模型约束：0 ≤ wi ≤ 40%, L2 正则化</text>
+  <text x="430" y="490" fill="#000000" font-size="13">▶ 调仓频率：月末再平衡 (Monthly)</text>
+
+  <rect x="410" y="620" width="340" height="50" fill="#e2efda" stroke="#548235" stroke-width="1.5" rx="0"/>
+  <text x="580" y="650" fill="#385723" font-size="14" font-weight="bold" text-anchor="middle">target_weights.csv</text>
+
+
+  <rect x="810" y="100" width="310" height="640" fill="#ecf9f0" stroke="#000000" stroke-width="1.5" stroke-dasharray="6 4" rx="0"/>
+  <rect x="810" y="100" width="310" height="40" fill="#c3e6cb" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="965" y="125" fill="#000000" font-size="16" font-weight="bold" text-anchor="middle">模块 C: 执行与回测层 (analyzer.py)</text>
+
+  <rect x="830" y="180" width="270" height="80" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="830" y="180" width="270" height="30" fill="#ddebf7" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="965" y="200" fill="#000000" font-size="13" font-weight="bold" text-anchor="middle">波动率控制与资金杠杆管理</text>
+  <text x="965" y="240" fill="#000000" font-size="13" text-anchor="middle">设定目标波动率: 6% | 最大杠杆: 2.0x</text>
+
+  <rect x="830" y="310" width="270" height="80" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="830" y="310" width="270" height="30" fill="#fce4d6" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="965" y="330" fill="#000000" font-size="13" font-weight="bold" text-anchor="middle">场外总收益互换 (TRS) 融资成本</text>
+  <text x="965" y="370" fill="#c00000" font-size="13" font-weight="bold" text-anchor="middle">精确扣减: (L - 1) × 3.5% 互换融资成本</text>
+
+  <rect x="830" y="440" width="270" height="110" fill="#ffffff" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <rect x="830" y="440" width="270" height="30" fill="#ddebf7" stroke="#000000" stroke-width="1.5" rx="0"/>
+  <text x="965" y="460" fill="#000000" font-size="13" font-weight="bold" text-anchor="middle">实证绩效指标评估</text>
+  <text x="850" y="495" fill="#000000" font-size="12">✔ 平均杠杆: 0.83x | 夏普: 0.72</text>
+  <text x="850" y="520" fill="#000000" font-size="12">✔ 最大回撤: -7.55% | 组合波动: 5.87%</text>
+
+  <rect x="830" y="620" width="270" height="50" fill="#e2efda" stroke="#548235" stroke-width="1.5" rx="0"/>
+  <text x="965" y="650" fill="#385723" font-size="14" font-weight="bold" text-anchor="middle">输出: 最终净值与风险贡献 PNG图</text>
+
+
+  <path d="M 190 200 V 230" fill="none" stroke="#888888" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrow-grey)" />
+  <path d="M 190 380 V 410" fill="none" stroke="#888888" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrow-grey)" />
+  <path d="M 190 520 V 550" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+  <path d="M 190 590 V 620" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <path d="M 330 645 H 370 V 160 H 580 V 230 H 590" fill="none" stroke="#1f4e79" stroke-width="2" marker-end="url(#arrow-blue)" />
+  <path d="M 370 230 H 410" fill="none" stroke="#1f4e79" stroke-width="2" marker-end="url(#arrow-blue)" />
+
+  <path d="M 490 280 V 310 H 580 V 340" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+  <path d="M 670 280 V 310 H 580 V 340" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+  <path d="M 580 500 V 620" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <path d="M 750 645 H 790 V 220 H 830" fill="none" stroke="#1f4e79" stroke-width="2" marker-end="url(#arrow-blue)" />
+
+  <path d="M 965 260 V 310" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+  <path d="M 965 390 V 440" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+  <path d="M 965 550 V 620" fill="none" stroke="#000000" stroke-width="1.5" marker-end="url(#arrow)" />
+
+</svg>
