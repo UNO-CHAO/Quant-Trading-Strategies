@@ -3,12 +3,20 @@
 CTA择时信号与动态风险平价策略优化模块
 =====================================
 功能：
-1. 多策略CTA择时信号生成（双均线、唐奇安通道、MACD）
-2. 基于动态风险预算的风险平价权重优化（SLSQP算法）
-3. 月频调仓机制
+1. 宏观经济象限识别与风险预算分配
+2. 多策略CTA择时信号生成（双均线、唐奇安通道、MACD）
+3. 收益率滚动预测与风险测度评估
+4. 基于动态风险预算的风险平价权重优化（SLSQP算法）
+5. 月频调仓机制
+
+经济象限模型：
+- 增长超预期 + 通胀超预期 → 权益+商品
+- 增长超预期 + 通胀低于预期 → 权益+债券
+- 增长低于预期 + 通胀超预期 → 商品+黄金
+- 增长低于预期 + 通胀低于预期 → 债券
 
 作者：量化开发工程师
-日期：2025-03-23
+日期：2025-03-26
 """
 
 import pandas as pd
@@ -16,6 +24,9 @@ import numpy as np
 from scipy.optimize import minimize
 from typing import Dict, Tuple, Optional
 import warnings
+
+# 导入宏观经济象限模型
+from macro_regime import MacroRegimeDetector, RegimeRiskBudgetAllocator
 
 warnings.filterwarnings('ignore')
 
@@ -177,31 +188,101 @@ class CTASignalGenerator:
 
 
 # ============================================================================
-# 模块二：动态风险平价优化器
+# 模块二：收益率预测与风险测度评估
+# ============================================================================
+
+class ReturnForecaster:
+    """
+    收益率滚动预测器
+
+    使用历史收益率均值进行滚动预测
+    """
+
+    def __init__(self, lookback_period: int = 126):
+        """
+        初始化预测器
+
+        参数:
+            lookback_period: 预测窗口
+        """
+        self.lookback_period = lookback_period
+
+    def forecast_returns(self, returns_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        滚动预测收益率
+
+        参数:
+            returns_df: 历史收益率数据
+
+        返回:
+            预测收益率DataFrame
+        """
+        forecast = returns_df.rolling(
+            window=self.lookback_period,
+            min_periods=20
+        ).mean()
+
+        return forecast
+
+    def forecast_volatility(self, returns_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        滚动预测波动率
+
+        参数:
+            returns_df: 历史收益率数据
+
+        返回:
+            预测波动率DataFrame（年化）
+        """
+        vol = returns_df.rolling(
+            window=self.lookback_period,
+            min_periods=20
+        ).std() * np.sqrt(252)
+
+        return vol
+
+
+# ============================================================================
+# 模块三：动态风险平价优化器
 # ============================================================================
 
 class RiskParityOptimizer:
     """
     动态风险平价优化器
 
-    使用SLSQP算法求解风险平价权重
+    整合宏观经济象限模型和CTA择时信号，
+    使用SLSQP算法求解风险平价权重。
+
+    约束条件：
+    - 权重和为1
+    - 单资产权重上限40%
+    - 权重非负
     """
 
+    # 权重上限约束
+    MAX_WEIGHT = 0.40  # 40%
+
     def __init__(self, returns_df: pd.DataFrame, signals_df: pd.DataFrame,
-                 lookback_period: int = 126, ewma_span: int = 126):
+                 price_df: pd.DataFrame = None,
+                 lookback_period: int = 126, ewma_span: int = 126,
+                 max_weight: float = 0.40):
         """
         初始化风险平价优化器
 
         参数:
             returns_df: 收益率数据
             signals_df: CTA信号数据
+            price_df: 价格数据（用于象限识别）
             lookback_period: 协方差矩阵计算窗口
             ewma_span: EWMA平滑参数
+            max_weight: 单资产权重上限（默认40%）
         """
         self.returns_df = returns_df.copy()
         self.signals_df = signals_df.copy()
+        self.price_df = price_df.copy() if price_df is not None else None
         self.lookback_period = lookback_period
         self.ewma_span = ewma_span
+        self.max_weight = max_weight
 
         # 确保列对齐
         self.assets = list(returns_df.columns)
@@ -210,12 +291,39 @@ class RiskParityOptimizer:
         # 基础风险预算
         self.base_risk_budget = np.array([0.20] * self.n_assets)
 
+        # 初始化宏观经济象限模型
+        self.regime_detector = None
+        self.budget_allocator = None
+        self.regime_df = None
+
+        if self.price_df is not None:
+            self._init_regime_model()
+
+        # 收益率预测器
+        self.forecaster = ReturnForecaster(lookback_period)
+        self.forecast_returns_df = None
+        self.forecast_vol_df = None
+
         # 结果存储
         self.target_weights = pd.DataFrame(
             index=returns_df.index,
             columns=self.assets,
             dtype=float
         )
+
+    def _init_regime_model(self):
+        """初始化宏观经济象限模型"""
+        print("\n[INFO] 初始化宏观经济象限模型...")
+        self.regime_detector = MacroRegimeDetector(self.price_df)
+        self.regime_df = self.regime_detector.detect_regimes()
+        self.budget_allocator = RegimeRiskBudgetAllocator(self.assets)
+
+    def _forecast_risk_metrics(self):
+        """预测收益率和波动率"""
+        print("\n[INFO] 计算滚动收益率预测...")
+        self.forecast_returns_df = self.forecaster.forecast_returns(self.returns_df)
+        self.forecast_vol_df = self.forecaster.forecast_volatility(self.returns_df)
+        print(f"[INFO] 预测完成，窗口: {self.lookback_period}天")
 
     def _calculate_ewma_covariance(self, date_idx: int) -> Optional[np.ndarray]:
         """
@@ -252,6 +360,11 @@ class RiskParityOptimizer:
         """
         获取动态风险预算
 
+        整合宏观经济象限模型和CTA择时信号：
+        1. 根据经济象限获取基础风险预算系数
+        2. 根据CTA信号调整预算
+        3. 归一化
+
         参数:
             date_idx: 当前日期索引位置
 
@@ -261,17 +374,26 @@ class RiskParityOptimizer:
         # 当日CTA信号
         signals = self.signals_df.iloc[date_idx].values
 
-        # 动态风险预算 = 基础预算 * CTA信号
-        dynamic_budget = self.base_risk_budget * signals
+        # 基础风险预算
+        dynamic_budget = self.base_risk_budget.copy()
 
-        # 极端防御机制：所有信号为0时
+        # 1. 宏观经济象限调整
+        if self.budget_allocator is not None and self.regime_df is not None:
+            regime = self.regime_df['regime'].iloc[date_idx]
+            regime_budget = self.budget_allocator.get_budget(regime, signals)
+            dynamic_budget = regime_budget
+        else:
+            # 无象限模型时，仅使用CTA信号调整
+            dynamic_budget = self.base_risk_budget * signals
+
+        # 2. 极端防御机制：所有信号为0时
         if np.all(signals == 0):
             # 强制赋予国债全部预算
             dynamic_budget = np.zeros(self.n_assets)
             bond_idx = self.assets.index('H11009.CSI')
             dynamic_budget[bond_idx] = 1.0
 
-        # 归一化
+        # 3. 归一化
         budget_sum = dynamic_budget.sum()
         if budget_sum > 0:
             dynamic_budget = dynamic_budget / budget_sum
@@ -328,6 +450,11 @@ class RiskParityOptimizer:
         """
         使用SLSQP算法优化权重
 
+        约束条件：
+        - 权重和为1
+        - 单资产权重上限40%
+        - 权重非负
+
         参数:
             cov_matrix: 协方差矩阵
             target_budget: 目标风险预算
@@ -343,8 +470,8 @@ class RiskParityOptimizer:
             {'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}  # 权重和为1
         ]
 
-        # 边界条件：权重在[0, 1]之间
-        bounds = tuple((0.0, 1.0) for _ in range(self.n_assets))
+        # 边界条件：权重在[0, max_weight]之间，max_weight默认为40%
+        bounds = tuple((0.0, self.max_weight) for _ in range(self.n_assets))
 
         # 优化求解
         result = minimize(
@@ -394,12 +521,22 @@ class RiskParityOptimizer:
         """
         执行优化流程
 
+        流程：
+        1. 预测收益率和波动率
+        2. 识别经济象限
+        3. 计算动态风险预算
+        4. SLSQP优化权重
+
         返回:
             每日目标权重DataFrame
         """
         print("\n[INFO] 开始执行动态风险平价优化...")
         print(f"[INFO] 回看窗口: {self.lookback_period} 天")
         print(f"[INFO] EWMA参数: span={self.ewma_span}")
+        print(f"[INFO] 权重上限: {self.max_weight*100:.0f}%")
+
+        # 预测收益率和波动率
+        self._forecast_risk_metrics()
 
         # 获取调仓日期
         rebalance_idx = self._get_rebalance_dates()
@@ -418,7 +555,7 @@ class RiskParityOptimizer:
                 cov_matrix = self._calculate_ewma_covariance(i)
 
                 if cov_matrix is not None:
-                    # 获取动态风险预算
+                    # 获取动态风险预算（整合象限模型和CTA信号）
                     target_budget = self._get_dynamic_risk_budget(i)
 
                     # 优化权重
@@ -435,6 +572,10 @@ class RiskParityOptimizer:
         if nan_count > 0:
             print(f"[WARNING] 发现 {nan_count} 个NaN值，使用前向填充处理")
             self.target_weights = self.target_weights.ffill()
+
+        # 检查权重上限
+        max_weight_found = self.target_weights.max().max()
+        print(f"[INFO] 实际最大权重: {max_weight_found:.2%}")
 
         print(f"[INFO] 优化完成，权重矩阵形状: {self.target_weights.shape}")
 
@@ -464,7 +605,7 @@ class StrategyOrchestrator:
     """
     策略编排器
 
-    整合数据读取、信号生成、权重优化和结果输出
+    整合数据读取、宏观经济象限识别、信号生成、权重优化和结果输出
     """
 
     # 资产名称映射
@@ -477,16 +618,19 @@ class StrategyOrchestrator:
     }
 
     def __init__(self, price_path: str = 'price_data.csv',
-                 returns_path: str = 'returns_data.csv'):
+                 returns_path: str = 'returns_data.csv',
+                 max_weight: float = 0.40):
         """
         初始化策略编排器
 
         参数:
             price_path: 价格数据文件路径
             returns_path: 收益率数据文件路径
+            max_weight: 单资产权重上限（默认40%）
         """
         self.price_path = price_path
         self.returns_path = returns_path
+        self.max_weight = max_weight
         self.price_df = None
         self.returns_df = None
         self.signals_df = None
@@ -545,6 +689,8 @@ class StrategyOrchestrator:
         """
         执行权重优化
 
+        整合宏观经济象限模型和CTA择时信号
+
         返回:
             目标权重DataFrame
         """
@@ -555,8 +701,10 @@ class StrategyOrchestrator:
         optimizer = RiskParityOptimizer(
             returns_df=self.returns_df,
             signals_df=self.signals_df,
+            price_df=self.price_df,  # 传入价格数据用于象限识别
             lookback_period=126,
-            ewma_span=126
+            ewma_span=126,
+            max_weight=self.max_weight  # 权重上限
         )
         self.weights_df = optimizer.run_optimization()
 
@@ -575,6 +723,8 @@ class StrategyOrchestrator:
         参数:
             output_path: 输出文件路径
         """
+        import os
+
         print("\n" + "=" * 70)
         print("【步骤4】结果保存")
         print("=" * 70)
@@ -582,6 +732,10 @@ class StrategyOrchestrator:
         if self.weights_df is not None:
             # 使用传入的保存路径或默认路径
             output_path = output_path if output_path else 'result/target_weights.csv'
+
+            # 确保目录存在
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
             self.weights_df.to_csv(output_path)
             print(f"[INFO] 目标权重已保存至: {output_path}")
         else:
