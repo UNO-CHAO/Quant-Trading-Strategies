@@ -6,7 +6,7 @@
 1. 目标波动率控制与动态杠杆计算
 2. 互换资金成本扣除
 3. 绩效评估与基准对比
-4. 可视化展示
+4. 可视化展示（含论文图表生成）
 
 作者：量化开发工程师
 日期：2025-03-23
@@ -15,15 +15,19 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib.patches as mpatches
 import matplotlib.font_manager as fm
 from typing import Dict, Tuple, Optional
 import warnings
+import os
 
 warnings.filterwarnings('ignore')
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'STHeiti', 'Heiti TC']
 plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['figure.dpi'] = 150
 
 
 # ============================================================================
@@ -402,7 +406,7 @@ class BacktestVisualizer:
     """
     回测可视化器
 
-    生成净值曲线和权重堆积图
+    生成净值曲线、权重堆积图及论文图表
     """
 
     ASSET_NAMES = {
@@ -413,9 +417,19 @@ class BacktestVisualizer:
         '518880.SH': '华安黄金ETF'
     }
 
+    # 简短资产名称（用于论文图表）
+    ASSET_NAMES_SHORT = {
+        '000300.SH': '沪深300',
+        '510880.SH': '红利ETF',
+        'H11009.CSI': '国债指数',
+        '510410.SH': '资源ETF',
+        '518880.SH': '黄金ETF'
+    }
+
     def __init__(self, strategy_nav: pd.Series, benchmark1_nav: pd.Series,
                  benchmark2_nav: pd.Series, weights_df: pd.DataFrame,
-                 leverage_series: pd.Series):
+                 leverage_series: pd.Series, returns_df: pd.DataFrame = None,
+                 price_df: pd.DataFrame = None):
         """
         初始化可视化器
 
@@ -425,12 +439,16 @@ class BacktestVisualizer:
             benchmark2_nav: 基准2净值
             weights_df: 权重数据
             leverage_series: 杠杆序列
+            returns_df: 收益率数据（用于论文图表）
+            price_df: 价格数据（用于计算宏观象限）
         """
         self.strategy_nav = strategy_nav
         self.benchmark1_nav = benchmark1_nav
         self.benchmark2_nav = benchmark2_nav
         self.weights_df = weights_df
         self.leverage_series = leverage_series
+        self.returns_df = returns_df
+        self.price_df = price_df
 
     def plot_results(self, save_path: str = 'backtest_results.png') -> None:
         """
@@ -508,6 +526,383 @@ class BacktestVisualizer:
 
         plt.close()
 
+    # =========================================================================
+    # 论文图表生成方法
+    # =========================================================================
+
+    def _compute_macro_regime(self) -> pd.Series:
+        """
+        计算宏观象限序列
+
+        增长代理: 权益类(000300.SH, 510880.SH)等权60日年化动量
+        通胀代理: 商品类(510410.SH, 518880.SH)等权60日年化动量
+
+        返回:
+            象限序列 (1/2/3/4)
+        """
+        if self.price_df is None:
+            raise ValueError("需要价格数据来计算宏观象限")
+
+        # 计算日收益率
+        ret = self.price_df.pct_change()
+
+        # 权益类等权收益
+        equity_cols = [c for c in ret.columns if c in ['000300.SH', '510880.SH']]
+        equity_ret = ret[equity_cols].mean(axis=1)
+
+        # 商品类等权收益
+        commodity_cols = [c for c in ret.columns if c in ['510410.SH', '518880.SH']]
+        commodity_ret = ret[commodity_cols].mean(axis=1)
+
+        # 60日年化动量
+        growth_momentum = equity_ret.rolling(60).mean() * 252
+        inflation_momentum = commodity_ret.rolling(60).mean() * 252
+
+        # 象限划分
+        growth_signal = (growth_momentum > 0).astype(int)
+        inflation_signal = (inflation_momentum > 0).astype(int)
+
+        regime = pd.Series(index=self.price_df.index, dtype=int)
+        regime[(growth_signal == 1) & (inflation_signal == 1)] = 1
+        regime[(growth_signal == 1) & (inflation_signal == 0)] = 2
+        regime[(growth_signal == 0) & (inflation_signal == 1)] = 3
+        regime[(growth_signal == 0) & (inflation_signal == 0)] = 4
+
+        return regime.dropna().astype(int)
+
+    def plot_drawdown(self, save_path: str = None) -> None:
+        """
+        图5: 三策略滚动最大回撤对比图
+
+        参数:
+            save_path: 保存路径（可选）
+        """
+        print("\n[INFO] 生成图5: 滚动最大回撤对比图...")
+
+        fig, ax = plt.subplots(figsize=(14, 5))
+
+        # 构建净值DataFrame
+        nav_df = pd.DataFrame({
+            'CTA+风险平价+杠杆': self.strategy_nav,
+            '等权1/N组合': self.benchmark1_nav,
+            '静态风险平价': self.benchmark2_nav
+        })
+
+        cols = nav_df.columns
+        labels = cols.tolist()
+        colors = ['#E74C3C', '#3498DB', '#2ECC71']
+
+        for i, col in enumerate(cols):
+            nav = nav_df[col]
+            cummax = nav.cummax()
+            drawdown = (nav - cummax) / cummax
+            ax.fill_between(drawdown.index, drawdown.values, 0,
+                            alpha=0.3, color=colors[i])
+            ax.plot(drawdown.index, drawdown.values,
+                    label=labels[i], linewidth=1.0, color=colors[i])
+
+        # 标注关键事件
+        events = [
+            ('2015-07-01', '2015年\n股灾'),
+            ('2018-10-01', '2018年\n贸易摩擦'),
+            ('2020-03-01', '2020年\n疫情冲击'),
+        ]
+        for date_str, label in events:
+            date = pd.Timestamp(date_str)
+            if date >= nav_df.index[0] and date <= nav_df.index[-1]:
+                ax.axvline(x=date, color='gray', linestyle=':', alpha=0.5)
+                ax.text(date, ax.get_ylim()[0] * 0.15, label,
+                        fontsize=8, ha='center', va='bottom',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
+                                  edgecolor='gray', alpha=0.8))
+
+        ax.set_title('图5  三策略滚动最大回撤对比', fontsize=14, fontweight='bold')
+        ax.set_xlabel('日期', fontsize=11)
+        ax.set_ylabel('回撤幅度', fontsize=11)
+        ax.legend(loc='lower left', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(nav_df.index[0], nav_df.index[-1])
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0%}'))
+
+        plt.tight_layout()
+        path = save_path if save_path else 'figure5_drawdown.png'
+        plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"[INFO] 图5已保存: {path}")
+
+    def plot_macro_regime(self, save_path: str = None) -> pd.Series:
+        """
+        图6: 宏观象限时序分布图
+
+        参数:
+            save_path: 保存路径（可选）
+
+        返回:
+            象限序列
+        """
+        print("\n[INFO] 生成图6: 宏观象限时序分布图...")
+
+        regime = self._compute_macro_regime()
+
+        fig, ax = plt.subplots(figsize=(14, 3.5))
+
+        regime_colors = {1: '#E74C3C', 2: '#3498DB', 3: '#F39C12', 4: '#2ECC71'}
+        regime_labels = {
+            1: 'I: 高增长+高通胀',
+            2: 'II: 高增长+低通胀',
+            3: 'III: 低增长+高通胀',
+            4: 'IV: 低增长+低通胀'
+        }
+
+        # 逐段绘制颜色带
+        prev_regime = regime.iloc[0]
+        start_idx = regime.index[0]
+
+        for idx in range(1, len(regime)):
+            curr_regime = regime.iloc[idx]
+            if curr_regime != prev_regime or idx == len(regime) - 1:
+                end_idx = regime.index[idx]
+                ax.axvspan(start_idx, end_idx,
+                           alpha=0.6, color=regime_colors.get(prev_regime, 'gray'),
+                           linewidth=0)
+                start_idx = end_idx
+                prev_regime = curr_regime
+
+        # 图例
+        legend_handles = [mpatches.Patch(color=regime_colors[r], alpha=0.6, label=regime_labels[r])
+                          for r in [1, 2, 3, 4]]
+        ax.legend(handles=legend_handles, loc='upper center', ncol=4, fontsize=9,
+                  bbox_to_anchor=(0.5, 1.25))
+
+        ax.set_title('图6  宏观经济象限时序分布', fontsize=14, fontweight='bold', pad=30)
+        ax.set_xlabel('日期', fontsize=11)
+        ax.set_yticks([])
+        ax.set_xlim(regime.index[0], regime.index[-1])
+
+        # 统计各象限占比
+        regime_counts = regime.value_counts(normalize=True).sort_index()
+        stats_text = '  |  '.join([f'{regime_labels[r]}: {pct:.1%}'
+                                   for r, pct in regime_counts.items()])
+        ax.text(0.5, -0.15, stats_text, transform=ax.transAxes,
+                ha='center', fontsize=9, style='italic')
+
+        plt.tight_layout()
+        path = save_path if save_path else 'figure6_regime.png'
+        plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"[INFO] 图6已保存: {path}")
+
+        # 输出象限统计
+        print("\n  宏观象限分布统计:")
+        for r in [1, 2, 3, 4]:
+            pct = regime_counts.get(r, 0)
+            print(f"    {regime_labels[r]}: {pct:.2%} ({int(pct * len(regime))}个交易日)")
+
+        return regime
+
+    def plot_leverage_vol(self, save_path: str = None) -> None:
+        """
+        图7: 杠杆乘数与滚动波动率对比图
+
+        参数:
+            save_path: 保存路径（可选）
+        """
+        print("\n[INFO] 生成图7: 杠杆与波动率对比图...")
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+
+        leverage = self.leverage_series
+
+        # 上半部分: 杠杆乘数
+        ax1.plot(leverage.index, leverage.values, color='#8E44AD', linewidth=0.8)
+        ax1.axhline(y=1.0, color='red', linestyle='--', alpha=0.5, label='杠杆=1.0')
+        ax1.fill_between(leverage.index, leverage.values, 1.0,
+                         where=leverage.values > 1.0, alpha=0.2, color='red',
+                         label='加杠杆区间')
+        ax1.fill_between(leverage.index, leverage.values, 1.0,
+                         where=leverage.values <= 1.0, alpha=0.2, color='green',
+                         label='减杠杆区间')
+
+        ax1.set_ylabel('杠杆乘数', fontsize=11)
+        ax1.set_title('图7  杠杆乘数与组合滚动波动率动态', fontsize=14, fontweight='bold')
+        ax1.legend(loc='upper right', fontsize=9)
+        ax1.grid(True, alpha=0.3)
+        mean_lev = leverage.mean()
+        ax1.axhline(y=mean_lev, color='gray', linestyle=':', alpha=0.5)
+        ax1.text(leverage.index[-1], mean_lev, f' 均值={mean_lev:.2f}x',
+                 va='center', fontsize=9, color='gray')
+
+        # 下半部分: 126日滚动波动率
+        strategy_ret = self.strategy_nav.pct_change().dropna()
+        rolling_vol = strategy_ret.rolling(126).std() * np.sqrt(252)
+
+        ax2.plot(rolling_vol.index, rolling_vol.values, color='#E67E22', linewidth=0.8,
+                 label='组合实现波动率(126日滚动)')
+        ax2.axhline(y=0.06, color='red', linestyle='--', linewidth=1.5, alpha=0.7,
+                    label='目标波动率 6%')
+        ax2.fill_between(rolling_vol.index, rolling_vol.values, 0.06,
+                         where=rolling_vol.values > 0.06, alpha=0.15, color='red')
+        ax2.fill_between(rolling_vol.index, rolling_vol.values, 0.06,
+                         where=rolling_vol.values <= 0.06, alpha=0.15, color='green')
+
+        ax2.set_ylabel('年化波动率', fontsize=11)
+        ax2.set_xlabel('日期', fontsize=11)
+        ax2.legend(loc='upper right', fontsize=9)
+        ax2.grid(True, alpha=0.3)
+        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0%}'))
+        ax2.set_xlim(self.strategy_nav.index[0], self.strategy_nav.index[-1])
+
+        plt.tight_layout()
+        path = save_path if save_path else 'figure7_leverage_vol.png'
+        plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"[INFO] 图7已保存: {path}")
+
+        # 输出统计
+        print(f"\n  杠杆统计:")
+        print(f"    平均杠杆: {leverage.mean():.4f}x")
+        print(f"    中位杠杆: {leverage.median():.4f}x")
+        print(f"    最小杠杆: {leverage.min():.4f}x")
+        print(f"    最大杠杆: {leverage.max():.4f}x")
+        vol_valid = rolling_vol.dropna()
+        print(f"  实现波动率统计:")
+        print(f"    均值: {vol_valid.mean():.4f}")
+        print(f"    与目标偏差: {vol_valid.mean() - 0.06:.4f}")
+
+    def plot_weights_stack(self, save_path: str = None) -> None:
+        """
+        图8: 月度资产权重堆积面积图
+
+        参数:
+            save_path: 保存路径（可选）
+        """
+        print("\n[INFO] 生成图8: 月度资产权重堆积面积图...")
+
+        fig, ax = plt.subplots(figsize=(14, 5))
+
+        # 月度取样
+        monthly = self.weights_df.resample('M').last()
+
+        colors = ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6']
+        labels = [self.ASSET_NAMES_SHORT.get(c, c) for c in monthly.columns]
+
+        ax.stackplot(monthly.index, monthly.values.T,
+                     labels=labels, colors=colors, alpha=0.85)
+
+        ax.set_title('图8  月度资产权重堆积面积图', fontsize=14, fontweight='bold')
+        ax.set_xlabel('日期', fontsize=11)
+        ax.set_ylabel('权重', fontsize=11)
+        ax.set_ylim(0, 1.05)
+        ax.set_xlim(monthly.index[0], monthly.index[-1])
+        ax.legend(loc='upper left', fontsize=9, ncol=5, bbox_to_anchor=(0, 1.12))
+        ax.grid(True, alpha=0.3, axis='y')
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0%}'))
+
+        plt.tight_layout()
+        path = save_path if save_path else 'figure8_weights.png'
+        plt.savefig(path, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        print(f"[INFO] 图8已保存: {path}")
+
+        # 输出各资产平均配置比例
+        print(f"\n  各资产平均配置比例:")
+        for col in self.weights_df.columns:
+            name = self.ASSET_NAMES_SHORT.get(col, col)
+            print(f"    {name}: {self.weights_df[col].mean():.2%}")
+
+    def generate_regime_performance(self) -> None:
+        """
+        表9: 计算各象限下的策略绩效
+        """
+        print("\n[INFO] 计算表9: 各象限绩效统计...")
+
+        regime = self._compute_macro_regime()
+        strategy_ret = self.strategy_nav.pct_change()
+
+        # 对齐日期
+        common_idx = regime.index.intersection(strategy_ret.index)
+        regime_aligned = regime.loc[common_idx]
+        ret_aligned = strategy_ret.loc[common_idx]
+
+        regime_labels = {
+            1: 'I: 高增长+高通胀',
+            2: 'II: 高增长+低通胀',
+            3: 'III: 低增长+高通胀',
+            4: 'IV: 低增长+低通胀'
+        }
+
+        print(f"\n  {'象限':<22} {'交易日占比':>10} {'年化收益率':>10} {'年化波动率':>10} {'夏普比率':>8}")
+        print("  " + "-" * 64)
+
+        for r in [1, 2, 3, 4]:
+            mask = regime_aligned == r
+            r_ret = ret_aligned[mask].dropna()
+            if len(r_ret) < 10:
+                continue
+            pct = mask.sum() / len(regime_aligned)
+            ann_ret = r_ret.mean() * 252
+            ann_vol = r_ret.std() * np.sqrt(252)
+            sharpe = (ann_ret - 0.02) / ann_vol if ann_vol > 0 else 0
+            print(f"  {regime_labels[r]:<22} {pct:>9.1%} {ann_ret:>9.2%} {ann_vol:>9.2%} {sharpe:>8.2f}")
+
+    def generate_annual_performance(self) -> None:
+        """
+        年度绩效概览
+        """
+        print("\n[INFO] 年度绩效概览:")
+
+        years = sorted(set(self.strategy_nav.index.year))
+        print(f"\n  {'年份':<6} {'策略收益':>8} {'等权收益':>8} {'策略回撤':>8}")
+        print("  " + "-" * 36)
+
+        for year in years:
+            mask = self.strategy_nav.index.year == year
+            if mask.sum() < 10:
+                continue
+            s = self.strategy_nav[mask]
+            e = self.benchmark1_nav[mask]
+            s_ret = s.iloc[-1] / s.iloc[0] - 1
+            e_ret = e.iloc[-1] / e.iloc[0] - 1
+
+            cummax = s.cummax()
+            dd = ((s - cummax) / cummax).min()
+
+            print(f"  {year:<6} {s_ret:>7.2%} {e_ret:>7.2%} {dd:>7.2%}")
+
+    def generate_all_thesis_charts(self, result_dir: str) -> None:
+        """
+        生成所有论文图表
+
+        参数:
+            result_dir: 结果保存目录
+        """
+        print("\n" + "=" * 70)
+        print("【论文图表批量生成】")
+        print("=" * 70)
+
+        # 图5: 滚动最大回撤
+        self.plot_drawdown(os.path.join(result_dir, 'figure5_drawdown.png'))
+
+        # 图6: 宏观象限分布
+        self.plot_macro_regime(os.path.join(result_dir, 'figure6_regime.png'))
+
+        # 图7: 杠杆与波动率
+        self.plot_leverage_vol(os.path.join(result_dir, 'figure7_leverage_vol.png'))
+
+        # 图8: 权重堆积图
+        self.plot_weights_stack(os.path.join(result_dir, 'figure8_weights.png'))
+
+        # 表9: 各象限绩效
+        self.generate_regime_performance()
+
+        # 年度绩效
+        self.generate_annual_performance()
+
+        print("\n" + "=" * 70)
+        print("  所有论文图表生成完毕！")
+        print(f"  输出目录: {result_dir}")
+        print("=" * 70)
+
 
 # ============================================================================
 # 主回测流程类
@@ -521,25 +916,39 @@ class BacktestOrchestrator:
     """
 
     def __init__(self, returns_path: str = 'returns_data.csv',
-                 weights_path: str = 'target_weights.csv'):
+                 weights_path: str = 'target_weights.csv',
+                 price_path: str = 'price_data.csv'):
         """
         初始化回测编排器
 
         参数:
             returns_path: 收益率数据路径
             weights_path: 权重数据路径
+            price_path: 价格数据路径（用于宏观象限计算）
         """
         self.returns_path = returns_path
         self.weights_path = weights_path
+        self.price_path = price_path
         self.engine = None
         self.analyzer = None
         self.visualizer = None
+        self.price_df = None
+        self.returns_df_raw = None
 
     def run(self, nav_save_path: str = None,
             chart_save_path: str = None,
-            csv_save_path: str = None) -> Dict:
+            csv_save_path: str = None,
+            thesis_charts: bool = True,
+            result_dir: str = None) -> Dict:
         """
         执行完整回测流程
+
+        参数:
+            nav_save_path: 净值数据保存路径
+            chart_save_path: 主图表保存路径
+            csv_save_path: 绩效指标CSV保存路径
+            thesis_charts: 是否生成论文图表
+            result_dir: 结果目录路径（用于论文图表保存）
 
         返回:
             绩效指标字典
@@ -547,6 +956,18 @@ class BacktestOrchestrator:
         print("\n" + "=" * 70)
         print(" " * 20 + "策略回测与绩效分析")
         print("=" * 70)
+
+        # 加载价格数据（用于宏观象限计算）
+        if self.price_path and os.path.exists(self.price_path):
+            self.price_df = pd.read_csv(self.price_path, index_col=0, parse_dates=True)
+            print(f"[INFO] 价格数据已加载: {self.price_df.shape}")
+        else:
+            print("[WARN] 价格数据未加载，部分论文图表将无法生成")
+
+        # 加载原始收益率数据（用于论文图表）
+        if self.returns_path and os.path.exists(self.returns_path):
+            self.returns_df_raw = pd.read_csv(self.returns_path, index_col=0, parse_dates=True)
+            self.returns_df_raw.columns = [c.replace('_return', '') for c in self.returns_df_raw.columns]
 
         # 1. 创建回测引擎
         self.engine = BacktestEngine(
@@ -579,16 +1000,24 @@ class BacktestOrchestrator:
             benchmark1_nav=benchmark1_nav,
             benchmark2_nav=benchmark2_nav,
             weights_df=self.engine.weights_df,
-            leverage_series=self.engine.leverage_series
+            leverage_series=self.engine.leverage_series,
+            returns_df=self.returns_df_raw,
+            price_df=self.price_df
         )
         # 使用传入的图表路径或默认路径
         chart_path = chart_save_path if chart_save_path else 'backtest_results.png'
         self.visualizer.plot_results(chart_path)
 
-        # 6. 保存净值数据
+        # 6. 生成论文图表（如果启用）
+        if thesis_charts:
+            thesis_dir = result_dir if result_dir else os.path.dirname(chart_path) if chart_path else 'result'
+            os.makedirs(thesis_dir, exist_ok=True)
+            self.visualizer.generate_all_thesis_charts(thesis_dir)
+
+        # 7. 保存净值数据
         self._save_nav_data(nav_save_path)
 
-        # 7. 保存 CSV 结果
+        # 8. 保存 CSV 结果
         if csv_save_path:
             self._save_metrics_csv(metrics_df, csv_save_path)
 
@@ -652,6 +1081,7 @@ if __name__ == '__main__':
     # 输入数据路径
     RETURNS_DATA_PATH = os.path.join(DATA_DIR, 'returns_data.csv')
     WEIGHTS_DATA_PATH = os.path.join(RESULT_DIR, 'target_weights.csv')
+    PRICE_DATA_PATH = os.path.join(DATA_DIR, 'price_data.csv')
 
     # 输出数据路径
     NAV_DATA_PATH = os.path.join(RESULT_DIR, 'nav_data.csv')
@@ -663,12 +1093,15 @@ if __name__ == '__main__':
     # -------------------------------------------------------------------------
     orchestrator = BacktestOrchestrator(
         returns_path=RETURNS_DATA_PATH,
-        weights_path=WEIGHTS_DATA_PATH
+        weights_path=WEIGHTS_DATA_PATH,
+        price_path=PRICE_DATA_PATH
     )
 
     # 执行回测（传入结果保存路径）
     metrics = orchestrator.run(
         nav_save_path=NAV_DATA_PATH,
         chart_save_path=BACKTEST_CHART_PATH,
-        csv_save_path=BACKTEST_CSV_PATH
+        csv_save_path=BACKTEST_CSV_PATH,
+        thesis_charts=True,
+        result_dir=RESULT_DIR
     )
