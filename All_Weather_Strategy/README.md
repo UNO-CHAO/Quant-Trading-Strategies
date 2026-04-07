@@ -103,7 +103,11 @@ All_Weather_Strategy/
     ├── target_weights.csv             # 每日目标权重（生成）
     ├── nav_data.csv                   # 净值曲线数据（生成）
     ├── backtest_results.csv           # 绩效指标结果（生成）
-    └── backtest_results.png           # 可视化图表（生成）
+    ├── backtest_results.png           # 策略净值对比图（生成）
+    ├── figure5_drawdown.png           # 滚动最大回撤对比图（生成）
+    ├── figure6_regime.png             # 宏观象限时序分布图（生成）
+    ├── figure7_leverage_vol.png       # 杠杆与波动率对比图（生成）
+    └── figure8_weights.png            # 月度权重堆积面积图（生成）
 ```
 
 ### 核心模块说明
@@ -150,6 +154,15 @@ All_Weather_Strategy/
 - TRS 互换资金成本扣除
 - 多基准对比（等权 1/N、静态风险平价）
 - 绩效指标计算与可视化
+- 论文图表批量生成（图5-8）
+
+**论文图表说明**：
+| 图表编号 | 文件名 | 内容描述 |
+|---------|--------|---------|
+| 图5 | `figure5_drawdown.png` | 三策略滚动最大回撤对比，标注关键事件 |
+| 图6 | `figure6_regime.png` | 宏观经济象限时序分布，四象限颜色编码 |
+| 图7 | `figure7_leverage_vol.png` | 杠杆乘数与126日滚动波动率动态对比 |
+| 图8 | `figure8_weights.png` | 月度资产权重堆积面积图，展示配置动态 |
 
 ---
 
@@ -203,7 +216,11 @@ python src/analyser.py
 **输出**：
 - `result/nav_data.csv` - 净值曲线数据
 - `result/backtest_results.csv` - 绩效指标
-- `result/backtest_results.png` - 可视化图表
+- `result/backtest_results.png` - 可视化图表（净值对比+权重堆积）
+- `result/figure5_drawdown.png` - 三策略滚动最大回撤对比图
+- `result/figure6_regime.png` - 宏观经济象限时序分布图
+- `result/figure7_leverage_vol.png` - 杠杆乘数与滚动波动率对比图
+- `result/figure8_weights.png` - 月度资产权重堆积面积图
 
 ---
 
