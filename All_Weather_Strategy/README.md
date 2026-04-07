@@ -565,6 +565,6 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 **Risk Parity + CTA 动态杠杆量化策略系统** | 风险平价基石 · CTA 增强 · 互换杠杆
 
-*本文档最后更新：2025-03-26*
+*本文档最后更新：2026-04-07*
 
 </div>
